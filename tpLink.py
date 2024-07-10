@@ -1,168 +1,76 @@
-#! /usr/bin/env python
+import os
+import time
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+from webdriver_manager.chrome import ChromeDriverManager
+
+# Configuration
+router_url = os.getenv("ROUTER_URL", "http://192.168.0.1")
+login_password = os.getenv("ROUTER_PASSWORD", "admin")
+
+# Try to initialize the web driver for Chrome
+driver = None
+
 try:
-    # For Python 3.0 and later
-    from urllib.request import urlopen
-    import json, base64
-except ImportError:
-    # Fall back to Python 2's
-    import urllib2, base64, json
+    # Try Chrome
+    driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()))
+except Exception as e:
+    print(f"Chrome not available: {e}")
 
-with open('config.json') as data_file:    
-    data = json.load(data_file)
+if driver is None:
+    print("No supported browser found on the system.")
+    exit(1)
 
-auth = 'Basic ' + base64.b64encode(data["Login"]["User"]+':'+data["Login"]["Password"])
+try:
+    # Navigate to the login page
+    driver.get(router_url)
 
-def makeRequest(url,heads):
-    request = urllib2.Request(url, None, heads)
-    return (urllib2.urlopen(request)).read()
+    # Wait for the login input box to be present
+    WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.XPATH, "/html/body/div[3]/div[2]/div/ul/li/input")))
 
-def addTarget(Description,domain1,domain2,domain3,domain4):
-    url = 'http://' + data["IpRouter"] + '/userRpm/AccessCtrlAccessTargetsRpm.htm?target_type=0&targets_lists_name='+Description+ '&dst_ip_start=&dst_ip_end=&dst_port_start=&dst_port_end=&proto=0&Commonport=0&url_0='+domain1+'&url_1='+domain2+'&url_2='+domain3+'&url_3='+domain4+'&Changed=0&SelIndex=0&fromAdd=0&Page=1&Save=Save'
-    
-    heads = { 'Referer' : 'http://' + data["IpRouter"] + '/userRpm/AccessCtrlAccessTargetsRpm.htm',
-             'Authorization' : auth
-    }
+    # Enter the login password
+    login_input = driver.find_element(By.XPATH, "/html/body/div[3]/div[2]/div/ul/li/input")
+    login_input.send_keys(login_password)
 
-    return makeRequest(url,heads)
+    # Click the login button
+    login_button = driver.find_element(By.XPATH, "/html/body/div[3]/div[2]/div/label")
+    login_button.click()
 
-def addHostLan(Description,ipStart,ipEnd):
-    Description = Description.replace(" ", "+")
-    url = 'http://' + data["IpRouter"] + '/userRpm/AccessCtrlHostsListsRpm.htm?addr_type=1&hosts_lists_name='+Description+'&src_ip_start='+ipStart+'&src_ip_end='+ipEnd+'&mac_addr=&Changed=0&SelIndex=0&fromAdd=0&Page=1&Save=Save'
-    
-    heads = { 'Referer' : 'http://' + data["IpRouter"] + '/userRpm/AccessCtrlHostsListsRpm.htm',
-             'Authorization' : auth
-    }
+    # Wait for the next page to load and ensure login is successful
+    time.sleep(5)  # Adjust this based on the speed of your network and router
 
-    return makeRequest(url,heads)
+    driver.switch_to.frame("frame1")
 
-def getTargetList(number):
-    url = 'http://' + IpRouter + '/userRpm/AccessCtrlAccessTargetsRpm.htm?Page='+str(number)
-    
-    heads = { 'Referer' : 'http://' + IpRouter + '/userRpm/AccessCtrlAccessTargetsRpm.htm',
-             'Authorization' : auth
-    }
+    system_tools = driver.find_element(By.XPATH, "/html/body/div/div[1]/ul/li[17]/a")
+    system_tools.click()
 
-    page = makeRequest(url,heads)
-    target = []
+    time.sleep(2)
 
-    #Parse out target list
-    page = page.split("new Array(", 1)
-    page = page[1].split('0,0 );', 1)
-    page = page[0].replace('"',"").replace(' ',"")
-    data = page.split("\n")
+    reboot = driver.find_element(By.XPATH, "/html/body/div/div[1]/ul/li[17]/ul/li[7]/a")
+    reboot.click()
 
-    for index in range(len(data)):
-        if(index != 0):
-            target.append( data[index].split(",") )
+    time.sleep(2)
 
-    return target
+    # switch back to the main frame
+    driver.switch_to.default_content()
+    driver.switch_to.frame("frame2")
 
-def countAllTarget():
-    return (len(getTargetList(1))-1)+(len(getTargetList(2))-1)
+    # Click the reboot button /html/body/div[1]/div/div/div[1]/p[3]/input
+    reboot_button = driver.find_element(By.XPATH, "/html/body/div[1]/div/div/div[1]/p[3]/input")
+    reboot_button.click()
 
-def addRule(ruleName,numberTarget):
-    url = 'http://' + data["IpRouter"] + '/userRpm/AccessCtrlAccessRulesRpm.htm?rule_name='+ruleName+'&hosts_lists=0&targets_lists='+str(numberTarget)+'&scheds_lists=255&enable=1&Changed=0&SelIndex=0&Page=1&Save=Save'
-    
-    heads = { 'Referer' : 'http://' + data["IpRouter"] + '/userRpm/AccessCtrlAccessRulesRpm.htm',
-             'Authorization' : auth
-    }
+    # Choose yes on the alert that pops up
+    alert = driver.switch_to.alert
+    alert.accept()
 
-    return makeRequest(url,heads)
+    print("Rebooting the router...")
 
-def reboot():
-    print ("Reboot")
-    url = 'http://' + data["IpRouter"] + '/userRpm/SysRebootRpm.htm?Reboot=%D6%D8%C6%F4%C2%B7%D3%C9%C6%F7'
-    heads = { 'Referer' : 'http://' + data["IpRouter"] + '/userRpm/SysRebootRpm.htm',
-             'Authorization' : auth
-    }
+    time.sleep(5)
 
-    return makeRequest(url,heads)
-
-def enableAccessControl():
-    print ("Enable Acces Control")
-    url = 'http://' + data["IpRouter"] + '/userRpm/AccessCtrlAccessRulesRpm.htm?enableCtrl=1&defRule=0&Page=1'
-    heads = { 'Referer' : 'http://' + data["IpRouter"] + '/userRpm/AccessCtrlAccessRulesRpm.htm',
-             'Authorization' : auth
-    }
-
-    return makeRequest(url,heads)
-
-def deleteAllRules():
-    print ("Delete all rules")
-    url = 'http://' + data["IpRouter"] + '/userRpm/AccessCtrlAccessRulesRpm.htm?doAll=DelAll&Page=1'
-    heads = { 'Referer' : 'http://' + data["IpRouter"] + '/userRpm/AccessCtrlAccessRulesRpm.htm',
-             'Authorization' : auth
-    }
-
-    return makeRequest(url,heads)
-
-def deleteAllHosts():
-    print ("Delete all host")
-    url = 'http://' + data["IpRouter"] + '/userRpm/AccessCtrlHostsListsRpm.htm?doAll=DelAll&Page=1'
-    heads = { 'Referer' : 'http://' + data["IpRouter"] + '/userRpm/AccessCtrlHostsListsRpm.htm',
-             'Authorization' : auth
-    }
-
-    return makeRequest(url,heads)
-
-def deleteAllTarget():
-    print ("Delete all target")
-    url = 'http://' + data["IpRouter"] + '/userRpm/AccessCtrlAccessTargetsRpm.htm?doAll=DelAll&Page=1'
-    heads = { 'Referer' : 'http://' + data["IpRouter"] + '/userRpm/AccessCtrlAccessTargetsRpm.htm',
-             'Authorization' : auth
-    }
-
-    return makeRequest(url,heads)
-
-def setIpDevice(ip,mask):
-    print ("Set ip device "+ip)
-    url = 'http://' + data["IpRouter"] + '/userRpm/NetworkCfgRpm.htm?lanip='+ip+'&lanmask=3&inputMask='+mask+'&igmp_proxy=0&Save=Save'
-    heads = { 'Referer' : 'http://' + data["IpRouter"] + '/userRpm/NetworkCfgRpm.htm',
-             'Authorization' : auth
-    }
-
-    return makeRequest(url,heads)
-
-def getHostList():
-    url = 'http://' + IpRouter + '/userRpm/AccessCtrlHostsListsRpm.htm?Refresh=Refresh'
-    
-    heads = { 'Referer' : 'http://' + IpRouter + '/userRpm/AccessCtrlHostsListsRpm.htm',
-             'Authorization' : auth
-    }
-
-    page = makeRequest(url,heads)
-    host = []
-
-    #Parse out target list
-    page = page.split("new Array(", 1)
-    page = page[1].split('0,0 );', 1)
-    page = page[0].replace('"',"").replace(' ',"")
-    data = page.split("\n")
-
-    for index in range(len(data)):
-        if(index != 0):
-            host.append( data[index].split(",") )
-
-    return host
-
-if __name__ == "__main__":
-    print ("Welcome to apy TPLink")
-    # reboot()
-
-    # setIpDevice("192.168.0.2","255.255.255.0")
-
-    # addTarget("Description","domain1","domain2","domain3","domain4")
-    # deleteAllTarget()
-    # countAllTarget()
-    # getTargetList(number)
-
-    # addHostLan("Description","ipStart","ipEnd")
-    # deleteAllHosts()
-
-    # addRule("ruleName","numberTarget"):
-    # deleteAllRules()
-
-    # print countTargets()
-
-    # enableAccessControl():
-    # print getHostList()
+finally:
+    # Close the web driver
+    driver.quit()
