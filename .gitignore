@@ -28,3 +28,4 @@ Desktop.ini
 logs
 *.pyc
 .venv
+.env
